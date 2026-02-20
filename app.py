@@ -1,8 +1,10 @@
+import csv
+import io
 import json
 from datetime import date, datetime
 
 from apscheduler.schedulers.background import BackgroundScheduler
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, Response, jsonify, render_template, request
 
 from config import Config
 from models import CheckIn, PushSubscription, Settings, db
@@ -132,16 +134,48 @@ def settings():
     if request.method == "POST":
         data = request.get_json()
         if "reminder_time" in data:
-            Settings.set("reminder_time", data["reminder_time"])
+            time_str = data["reminder_time"]
+            try:
+                parts = time_str.split(":")
+                if len(parts) != 2:
+                    raise ValueError
+                h, m = int(parts[0]), int(parts[1])
+                if not (0 <= h <= 23 and 0 <= m <= 59):
+                    raise ValueError
+            except (ValueError, AttributeError):
+                return jsonify({"error": "reminder_time must be HH:MM (e.g. 17:30)"}), 400
+            Settings.set("reminder_time", time_str)
             schedule_reminder()
         if "average_amount" in data:
-            Settings.set("average_amount", data["average_amount"])
+            try:
+                amount = float(data["average_amount"])
+                if amount < 0:
+                    raise ValueError
+            except (ValueError, TypeError):
+                return jsonify({"error": "average_amount must be a non-negative number"}), 400
+            Settings.set("average_amount", amount)
         return jsonify({"ok": True})
 
     return jsonify({
         "reminder_time": Settings.get("reminder_time", app.config["DEFAULT_REMINDER_TIME"]),
         "average_amount": float(Settings.get("average_amount", app.config["DEFAULT_AVERAGE_AMOUNT"])),
     })
+
+
+@app.route("/api/export")
+def export_csv():
+    checkins = CheckIn.query.order_by(CheckIn.date.asc()).all()
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["date", "passed", "amount_saved", "note"])
+    for ci in checkins:
+        writer.writerow([ci.date.isoformat(), ci.passed, ci.amount_saved, ci.note])
+    csv_data = output.getvalue()
+    return Response(
+        csv_data,
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment; filename=snackstopper_export.csv"},
+    )
 
 
 # --- Init ---

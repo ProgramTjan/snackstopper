@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 from flask_sqlalchemy import SQLAlchemy
 
@@ -25,7 +25,7 @@ class CheckIn(db.Model):
 class PushSubscription(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     subscription_json = db.Column(db.Text, nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class Settings(db.Model):
